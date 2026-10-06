@@ -66,6 +66,7 @@ services:
       - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-}
       - NEXT_PUBLIC_IS_CLOUD=${NEXT_PUBLIC_IS_CLOUD:-false}
       - API_RATE_LIMIT=${API_RATE_LIMIT:-1}
+      - PLATFORM_API_KEY=${PLATFORM_API_KEY:-}
       - SMTP_HOST=${SMTP_HOST:-smtp.usesend.com}
       - SMTP_USER=${SMTP_USER:-usesend}
     depends_on:

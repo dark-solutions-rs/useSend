@@ -62,6 +62,14 @@ docker run -d \
 
 Replace the placeholders with your actual database and AWS details.
 
+To enable the Platform API (create teams and team API keys from your own platform), also pass a secret of at least 32 characters:
+
+```
+  -e PLATFORM_API_KEY="<long-random-secret>" \
+```
+
+See the [Platform API guide](../apps/docs/guides/platform.mdx) for details.
+
 1. Access the useSend application by visiting the URL you provided in the `NEXTAUTH_URL` environment variable in your web browser.
 
 ## Success

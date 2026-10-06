@@ -29,6 +29,8 @@ Set `PLATFORM_API_KEY` in the environment of the useSend server, then restart it
 PLATFORM_API_KEY="<long-random-secret>"
 ```
 
+With Docker, pass it like any other variable (`-e PLATFORM_API_KEY=...`). The production `docker/prod/compose.yml` already forwards `PLATFORM_API_KEY` from your `.env` file. It is read when the server starts, so no image rebuild is needed.
+
 If `PLATFORM_API_KEY` is not set, every `/api/v1/platform/*` endpoint returns `404`.
 
 <Warning>
