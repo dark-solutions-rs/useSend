@@ -32,6 +32,14 @@ import emailTimeSeries from "./api/analytics/email-time-series";
 import reputationMetricsData from "./api/analytics/reputation-metrics-data";
 import bulkAddContactsHandle from "./api/contacts/bulk-add-contacts";
 import bulkDeleteContacts from "./api/contacts/bulk-delete-contacts";
+import createPlatformTeam from "./api/platform/create-team";
+import getPlatformTeams from "./api/platform/get-teams";
+import getPlatformTeam from "./api/platform/get-team";
+import updatePlatformTeam from "./api/platform/update-team";
+import deletePlatformTeam from "./api/platform/delete-team";
+import createPlatformTeamApiKey from "./api/platform/create-team-api-key";
+import getPlatformTeamApiKeys from "./api/platform/get-team-api-keys";
+import deletePlatformTeamApiKey from "./api/platform/delete-team-api-key";
 
 
 export const app = getApp();
@@ -80,5 +88,15 @@ deleteCampaignHandle(app);
 /**Analytics related APIs */
 emailTimeSeries(app);
 reputationMetricsData(app);
+
+/**Platform APIs (PLATFORM_API_KEY only) */
+createPlatformTeam(app);
+getPlatformTeams(app);
+getPlatformTeam(app);
+updatePlatformTeam(app);
+deletePlatformTeam(app);
+createPlatformTeamApiKey(app);
+getPlatformTeamApiKeys(app);
+deletePlatformTeamApiKey(app);
 
 export default app;
