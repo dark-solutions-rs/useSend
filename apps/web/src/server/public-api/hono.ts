@@ -9,6 +9,16 @@ import { isSelfHosted } from "~/utils/common";
 import { UnsendApiError } from "./api-error";
 import { Team, ApiKey } from "@prisma/client";
 import { logger } from "../logger/log";
+import {
+  PLATFORM_PATH_PREFIX,
+  verifyPlatformToken,
+} from "~/server/public-api/platform-auth";
+
+function isPlatformPath(path: string) {
+  return (
+    path === PLATFORM_PATH_PREFIX || path.startsWith(`${PLATFORM_PATH_PREFIX}/`)
+  );
+}
 
 // Define AppEnv for Hono context
 export type AppEnv = {
@@ -29,6 +39,12 @@ export function getApp() {
       c.req.path.startsWith("/api/v1/ui") ||
       c.req.path === "/api/health"
     ) {
+      return next();
+    }
+
+    // Platform routes use PLATFORM_API_KEY instead of a team key and have no team context
+    if (isPlatformPath(c.req.path)) {
+      verifyPlatformToken(c as any);
       return next();
     }
 

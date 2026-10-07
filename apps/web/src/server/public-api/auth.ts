@@ -45,6 +45,13 @@ export const getTeamFromToken = async (c: Context) => {
     });
   }
 
+  if (team.isBlocked) {
+    throw new UnsendApiError({
+      code: "FORBIDDEN",
+      message: "Team is blocked",
+    });
+  }
+
   // No await so it won't block the request. Need to be moved to a queue in future
   db.apiKey
     .update({

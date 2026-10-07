@@ -1,0 +1,301 @@
+---
+title: Platform API
+description: "Create and manage isolated teams and their API keys from your own platform"
+---
+
+The Platform API lets a platform that hosts many customers (for example a multi-tenant e-commerce product) create a separate useSend **team** for each customer. Your platform never needs a dashboard login for these teams.
+
+Each team is fully isolated. It has its own domains, API keys, emails, email analytics, contact books, contacts and campaigns, and a team API key can only read or change its own team's data.
+
+## How it works
+
+1. Your platform calls the Platform API with the **platform key** to create a team. The response contains the team's first **team API key**.
+2. Your platform stores that team key, for example on its own tenant record.
+3. All further work for that customer goes through the regular API, called with the team key: [domains](/api-reference/domains/create-domain), [emails](/api-reference/emails/send-email), [analytics](/api-reference/analytics/email-time-series), [contacts](/api-reference/contacts/create-contact) and [campaigns](/api-reference/campaigns/create-campaign).
+
+```
+Your platform
+ ├─ Platform key  →  /api/v1/platform/*     create and manage teams and team keys
+ └─ Team key      →  /api/v1/*              domains, emails, analytics, contacts, campaigns
+                                            (limited to that one team)
+```
+
+## Setup
+
+Set `PLATFORM_API_KEY` in the environment of the useSend server, then restart it:
+
+```bash
+# At least 32 characters. Generate one with: openssl rand -hex 32
+PLATFORM_API_KEY="<long-random-secret>"
+```
+
+With Docker, pass it like any other variable (`-e PLATFORM_API_KEY=...`). The production `docker/prod/compose.yml` already forwards `PLATFORM_API_KEY` from your `.env` file. It is read when the server starts, so no image rebuild is needed.
+
+If `PLATFORM_API_KEY` is not set, every `/api/v1/platform/*` endpoint returns `404`.
+
+<Warning>
+  The platform key can create, block and delete any team. Keep it on your backend only and never send it to a browser or a customer.
+</Warning>
+
+## Authentication
+
+Send the key as a bearer token, the same way as team keys:
+
+```
+Authorization: Bearer <PLATFORM_API_KEY>
+```
+
+The two kinds of key are not interchangeable:
+
+| Key | `/api/v1/platform/*` | Other `/api/v1/*` endpoints |
+|---|---|---|
+| Platform key | Allowed | `403 Invalid API token` |
+| Team key | `403 Invalid platform API token` | Allowed, for its own team only |
+
+Platform requests are not counted against any team's rate limit.
+
+## Endpoints
+
+All paths are relative to `https://<your-usesend-host>/api`.
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/v1/platform/teams` | Create a team and its first API key |
+| `GET` | `/v1/platform/teams` | List teams |
+| `GET` | `/v1/platform/teams/{teamId}` | Get a team |
+| `PATCH` | `/v1/platform/teams/{teamId}` | Update a team (name, limits, blocked) |
+| `DELETE` | `/v1/platform/teams/{teamId}` | Delete a team and all of its data |
+| `POST` | `/v1/platform/teams/{teamId}/api-keys` | Create an API key for a team |
+| `GET` | `/v1/platform/teams/{teamId}/api-keys` | List a team's API keys |
+| `DELETE` | `/v1/platform/teams/{teamId}/api-keys/{apiKeyId}` | Revoke a team's API key |
+
+The full schema is also available in the interactive API docs of your server at `/api/v1/ui`.
+
+### The team object
+
+All team endpoints return teams in this shape:
+
+```json
+{
+  "id": 12,
+  "name": "Acme Store",
+  "isBlocked": false,
+  "apiRateLimit": 2,
+  "dailyEmailLimit": 10000,
+  "createdAt": "2026-10-06T10:00:00.000Z",
+  "updatedAt": "2026-10-06T10:00:00.000Z"
+}
+```
+
+| Field | Description |
+|---|---|
+| `id` | Team ID. Use it in the `{teamId}` path parameter. |
+| `name` | Display name, for example your customer's shop name. |
+| `isBlocked` | When `true`, every API call with this team's keys returns `403`. |
+| `apiRateLimit` | Requests per second allowed for this team's keys. |
+| `dailyEmailLimit` | Maximum emails per day for this team. |
+
+### Create a team
+
+`POST /v1/platform/teams`
+
+| Body field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | 1–255 characters. |
+| `apiRateLimit` | integer | No | Requests per second for this team's keys. Default `2`. |
+| `dailyEmailLimit` | integer | No | Default `10000`. |
+| `apiKeyName` | string | No | Name of the first key. Default `"Platform key"`. |
+| `apiKeyPermission` | `FULL` \| `SENDING` | No | Default `FULL`. |
+
+```bash
+curl -X POST https://usesend.example.com/api/v1/platform/teams \
+  -H "Authorization: Bearer $PLATFORM_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "name": "Acme Store", "dailyEmailLimit": 5000 }'
+```
+
+```json
+{
+  "team": {
+    "id": 12,
+    "name": "Acme Store",
+    "isBlocked": false,
+    "apiRateLimit": 2,
+    "dailyEmailLimit": 5000,
+    "createdAt": "2026-10-06T10:00:00.000Z",
+    "updatedAt": "2026-10-06T10:00:00.000Z"
+  },
+  "apiKey": "us_abc1234567_0123456789abcdef0123456789abcdef"
+}
+```
+
+<Note>
+  `apiKey` is returned only once and cannot be retrieved later. Store it securely. If it is lost, create a new key and revoke the old one.
+</Note>
+
+The team is created without any dashboard users.
+
+### List teams
+
+`GET /v1/platform/teams`
+
+| Query parameter | Description |
+|---|---|
+| `page` | Page number, starting at `1`. Default `1`. Each page holds 50 teams, newest first. |
+| `search` | Case-insensitive match on the team name. |
+
+```bash
+curl "https://usesend.example.com/api/v1/platform/teams?page=1&search=acme" \
+  -H "Authorization: Bearer $PLATFORM_API_KEY"
+```
+
+```json
+{
+  "teams": [{ "id": 12, "name": "Acme Store", "...": "..." }],
+  "totalPage": 1
+}
+```
+
+### Get a team
+
+`GET /v1/platform/teams/{teamId}` returns the team object.
+
+### Update a team
+
+`PATCH /v1/platform/teams/{teamId}`
+
+All fields are optional. Only the fields you send are changed.
+
+| Body field | Type | Description |
+|---|---|---|
+| `name` | string | 1–255 characters. |
+| `isBlocked` | boolean | Block or unblock the team. |
+| `apiRateLimit` | integer | Requests per second. |
+| `dailyEmailLimit` | integer | Maximum emails per day. |
+
+Block a team, for example when your customer stops paying:
+
+```bash
+curl -X PATCH https://usesend.example.com/api/v1/platform/teams/12 \
+  -H "Authorization: Bearer $PLATFORM_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "isBlocked": true }'
+```
+
+While a team is blocked, every request with its keys returns:
+
+```json
+{ "error": { "code": "FORBIDDEN", "message": "Team is blocked" } }
+```
+
+Its data is kept. Send `{ "isBlocked": false }` to restore access.
+
+### Delete a team
+
+`DELETE /v1/platform/teams/{teamId}`
+
+```json
+{ "id": 12, "success": true }
+```
+
+<Warning>
+  This permanently deletes the team and everything it owns: domains, API keys, emails, contact books, contacts and campaigns. It cannot be undone.
+</Warning>
+
+The team's domains are removed from AWS SES one at a time before the team is deleted. If a domain cannot be removed from SES, the request fails and the team is kept. You can safely retry the request.
+
+### Create an API key
+
+`POST /v1/platform/teams/{teamId}/api-keys`
+
+Use this to add more keys or to rotate a key.
+
+| Body field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | 1–255 characters. |
+| `permission` | `FULL` \| `SENDING` | No | Default `FULL`. |
+| `domainId` | integer | No | Restrict the key to one of the team's domains. |
+
+```json
+{ "apiKey": "us_def7654321_fedcba9876543210fedcba9876543210" }
+```
+
+Returns `404` if `domainId` does not belong to the team.
+
+### List API keys
+
+`GET /v1/platform/teams/{teamId}/api-keys`
+
+The full key is never returned, only a partial token for identification.
+
+```json
+[
+  {
+    "id": 3,
+    "name": "Platform key",
+    "permission": "FULL",
+    "domainId": null,
+    "partialToken": "us_abc...def",
+    "createdAt": "2026-10-06T10:00:00.000Z",
+    "lastUsed": "2026-10-06T11:30:00.000Z"
+  }
+]
+```
+
+### Revoke an API key
+
+`DELETE /v1/platform/teams/{teamId}/api-keys/{apiKeyId}`
+
+```json
+{ "id": 3, "success": true }
+```
+
+The key stops working immediately. Returns `404` if the key does not belong to that team.
+
+**Rotating a key:** create a new key, update your platform to use it, then revoke the old one.
+
+## Using a team key
+
+After you create a team, call the regular API with its key. For example, add the customer's sending domain:
+
+```bash
+curl -X POST https://usesend.example.com/api/v1/domains \
+  -H "Authorization: Bearer us_abc1234567_..." \
+  -H "Content-Type: application/json" \
+  -d '{ "name": "mail.acme-store.com", "region": "us-east-1" }'
+```
+
+Everything a team key can reach is limited to its team:
+
+| Area | Endpoints |
+|---|---|
+| Domains | create, list, get, verify, delete |
+| Emails | send, batch send, get, list, reschedule, cancel |
+| Email analytics | email time series, reputation metrics |
+| Contacts | contact books (create, list, get, update, delete) and contacts (create, list, get, update, upsert, delete, bulk add, bulk delete) |
+| Campaigns | create, list, get, schedule, pause, resume, delete |
+
+Requests for another team's resources return `404`.
+
+## Errors
+
+Errors use the same format as the rest of the API:
+
+```json
+{ "error": { "code": "NOT_FOUND", "message": "Team not found" } }
+```
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `BAD_REQUEST` | Invalid body, path or query parameters |
+| `401` | `UNAUTHORIZED` | No `Authorization` header |
+| `403` | `FORBIDDEN` | Wrong key, or the team is blocked |
+| `404` | `NOT_FOUND` | Unknown team, key or domain, or `PLATFORM_API_KEY` is not set |
+| `500` | `INTERNAL_SERVER_ERROR` | Unexpected error, for example SES failing during a team delete |
+
+## Things to know
+
+- **Shared sending account.** All teams send through the same AWS SES account, so they share its sending quota and reputation. A team with many bounces or complaints affects the others.
+- **Limits on self-hosted servers.** `dailyEmailLimit` and `apiRateLimit` are stored on the team, but a self-hosted server (`NEXT_PUBLIC_IS_CLOUD=false`) does not enforce them. Blocking a team works in both modes.
+- **Key permissions.** `SENDING` keys are not yet restricted by the API. Treat every team key as having full access to its team.
+- **No dashboard users.** Teams created through the Platform API have no members. Dashboard sign-up and the dashboard's own team are not affected.
